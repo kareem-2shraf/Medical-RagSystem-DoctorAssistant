@@ -1,0 +1,5 @@
+qdrant_db/
+parent_docstore/
+venv/
+.venv/
+__pycache__/
