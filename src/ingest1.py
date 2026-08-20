@@ -41,8 +41,9 @@ markdown_splitter = MarkdownHeaderTextSplitter(
 parent_docs = markdown_splitter.split_text(gdm_markdown)
 
 # =========================================================
+# إضافة الـ Custom Metadata لكل Document
+# =========================================================
 for doc in parent_docs:
-    # إضافة بيانات إضافية تفيدك في الفلترة بعدين
     doc.metadata["source"] = PDF_PATH.name
     doc.metadata["category"] = "clinical_guidelines"
     doc.metadata["disease"] = "Gestational Diabetes"
@@ -50,10 +51,10 @@ for doc in parent_docs:
 # =========================================================
 
 # ---------------------------------------------------------
-# STEP 2: Configure Embedding & Splitter
+# STEP 2: Configure Embedding & Splitter (BGE Model)
 # ---------------------------------------------------------
 embeddings = HuggingFaceEmbeddings(
-    model_name="all-MiniLM-L6-v2",
+    model_name="BAAI/bge-small-en-v1.5",
     model_kwargs={"device": "cpu"},
     encode_kwargs={"normalize_embeddings": True}
 )
@@ -74,7 +75,8 @@ if not client.collection_exists(collection_name=collection_name):
     print(f"Creating Qdrant collection '{collection_name}'...")
     client.create_collection(
         collection_name=collection_name,
-        vectors_config=VectorParams(size=384, distance=Distance.COSINE)  # 384 dims for MiniLM
+        # BGE-small also uses 384 dimensions, same as MiniLM
+        vectors_config=VectorParams(size=384, distance=Distance.COSINE)  
     )
 
 vectorstore = QdrantVectorStore(
