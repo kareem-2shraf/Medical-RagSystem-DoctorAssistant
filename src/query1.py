@@ -8,14 +8,17 @@ from langchain_classic.chains.combine_documents import create_stuff_documents_ch
 from langchain_classic.retrievers import ContextualCompressionRetriever
 from langchain_community.document_compressors.flashrank_rerank import FlashrankRerank
 from qdrant_client import QdrantClient
+from qdrant_client.http import models 
 
 def main():
     print("=== Launching Medical RAG Assistant ===")
 
-    # 1. Load Embeddings
+    # 1. Load Embeddings (BGE Model)
     print("[1/5] Loading BGE-Small embedding model...")
     embeddings = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5"
+        model_name="BAAI/bge-small-en-v1.5",
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True}
     )
 
     # 2. Connect to Qdrant Database
@@ -27,9 +30,29 @@ def main():
         embedding=embeddings
     )
     
-    # 3. Set up Re-ranking Retriever
-    print("[3/5] Initializing FlashRank Re-ranker (Top 10 -> Top 3)...")
-    base_retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
+    # 3. Set up Re-ranking Retriever with Metadata Filter & Threshold
+    print("[3/5] Configuring Filters and FlashRank Re-ranker...")
+    
+    # فلترة النتائج بناءً على الـ Metadata اللي ضفناها في Ingest
+    filter_condition = models.Filter(
+        must=[
+            models.FieldCondition(
+                key="metadata.disease",
+                match=models.MatchValue(value="Gestational Diabetes")
+            )
+        ]
+    )
+
+    # رفض الأسئلة خارج التخصص عن طريق Score Threshold
+    base_retriever = vectorstore.as_retriever(
+        search_type="similarity_score_threshold",
+        search_kwargs={
+            "score_threshold": 0.40, # تم رفع النسبة قليلاً لأن BGE أدق
+            "k": 10,
+            "filter": filter_condition
+        }
+    )
+    
     compressor = FlashrankRerank(top_n=3)
     reranker_retriever = ContextualCompressionRetriever(
         base_compressor=compressor, 
@@ -42,11 +65,11 @@ def main():
 
     # 5. Define System Prompt & Build Chain
     system_prompt = (
-        "You are a specialized Gestational Diabetes Assistant for doctors. "
-        "Use the following pieces of retrieved medical context to answer the question professionally. "
-        "If the answer is not in the context, state clearly: 'I cannot find this in the clinical guidelines.' "
-        "Do not guess or hallucinate facts."
-        "\n\n"
+        "You are a strict, highly specialized clinical AI assistant. "
+        "Your ONLY task is to answer the doctor's query based EXCLUSIVELY on the provided context. "
+        "If the context is empty or does not contain the exact answer, you MUST reply verbatim: "
+        "'I do not have enough information in the provided clinical guidelines to answer this question.' "
+        "Under no circumstances should you guess, assume, or use outside knowledge.\n\n"
         "Context:\n{context}"
     )
 
@@ -59,7 +82,9 @@ def main():
     rag_chain = create_retrieval_chain(reranker_retriever, question_answer_chain)
 
     # 6. Execute Query
+    # جرب تغير السؤال ده لسؤال بره الطب عشان تختبر الـ Threshold والـ Prompt
     question = "What is the fasting blood sugar target for gestational diabetes?"
+    
     print(f"\n[5/5] Processing Query: '{question}'\n")
 
     response = rag_chain.invoke({"input": question})
