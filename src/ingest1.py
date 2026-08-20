@@ -40,6 +40,15 @@ markdown_splitter = MarkdownHeaderTextSplitter(
 )
 parent_docs = markdown_splitter.split_text(gdm_markdown)
 
+# =========================================================
+for doc in parent_docs:
+    # إضافة بيانات إضافية تفيدك في الفلترة بعدين
+    doc.metadata["source"] = PDF_PATH.name
+    doc.metadata["category"] = "clinical_guidelines"
+    doc.metadata["disease"] = "Gestational Diabetes"
+    doc.metadata["organization"] = "ACOG"
+# =========================================================
+
 # ---------------------------------------------------------
 # STEP 2: Configure Embedding & Splitter
 # ---------------------------------------------------------
