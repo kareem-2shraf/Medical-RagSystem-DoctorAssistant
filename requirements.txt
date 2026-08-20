@@ -6,3 +6,10 @@ langchain-community
 chromadb
 sentence-transformers
 requests
+langchain-text-splitters
+langchain-qdrant
+qdrant-client
+pymupdf4llm
+langchain-huggingface
+langchain-community
+pandas

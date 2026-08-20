@@ -12,7 +12,9 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_classic.storage import LocalFileStore
 from langchain_classic.storage._lc_store import create_kv_docstore
 from langchain_classic.retrievers import ParentDocumentRetriever
-
+from langchain_classic.prompts import ChatPromptTemplate
+from langchain_classic.chains import create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 # ---------------------------------------------------------
 # DYNAMIC PATH RESOLUTION (Fixes file not found errors)
 # ---------------------------------------------------------
@@ -184,3 +186,30 @@ if __name__ == "__main__":
     df_results = pd.DataFrame(results)
     print("\n=== RETRIEVAL EVALUATION RESULTS ===")
     print(df_results.to_markdown(index=False))
+    # You will import your specific LLM here (e.g., OpenAI or Ollama)
+
+# 1. Define the LLM (This is the "Brain" that will read the text)
+llm = ... # We will fill this in next!
+
+# 2. Write the Medical System Prompt
+system_prompt = (
+    "You are a specialized Gestational Diabetes Assistant for doctors. "
+    "Use the following pieces of retrieved medical context to answer the question. "
+    "If the answer is not in the context, say 'I cannot find this in the guidelines.' "
+    "Do not hallucinate or guess."
+    "\n\n"
+    "Context: {context}"
+)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", system_prompt),
+    ("human", "{input}"),
+])
+
+# 3. Connect the Retriever, the Prompt, and the LLM
+question_answer_chain = create_stuff_documents_chain(llm, prompt)
+rag_chain = create_retrieval_chain(retriever, question_answer_chain)
+
+# 4. Ask a question!
+response = rag_chain.invoke({"input": "What is the first-line medication for GDM?"})
+print(response["answer"])
