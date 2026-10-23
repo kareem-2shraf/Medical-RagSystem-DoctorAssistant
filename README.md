@@ -168,7 +168,9 @@ Retrieval quality was benchmarked on 5 clinical questions drawn from the ACOG 20
 
 ## Team
 
-Add team name and members here.
+| Member | Handle |
+|---|---|
+| Mazen | [@mazen-vn](https://github.com/mazen-vn) |
 
 ## License
 
