@@ -174,4 +174,4 @@ Retrieval quality was benchmarked on 5 clinical questions drawn from the ACOG 20
 
 ## License
 
-Add a license of your choice (e.g., MIT).
+This project is licensed under the terms of the [LICENSE](./LICENSE) file.
