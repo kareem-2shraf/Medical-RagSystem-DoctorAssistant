@@ -14,7 +14,6 @@ st.set_page_config(page_title="Medical AI Assistant", page_icon="🩺", layout="
 
 # Persistent Sidebar for Safety & Guardrails
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2966/2966327.png", width=80) # Placeholder medical icon
     st.title("System Guardrails")
     st.warning(
         "**CLINICAL SAFETY DISCLAIMER**\n\n"
@@ -27,10 +26,12 @@ with st.sidebar:
         "No private or credential-gated data is used."
     )
     st.divider()
-    st.caption("Powered by Local AI (Qwen2.5) & BGE-Small")
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state.messages = []
+        st.rerun()
 
-st.title("🩺 Gestational Diabetes Clinical Support")
-st.caption("Evidence-Grounded Retrieval-Augmented Generation (RAG)")
+st.title("🩺 MEDRAG Clinical Support")
+st.caption("A medical AI assistant grounded in Gestational Diabetes guidelines.")
 st.divider()
 
 # --- 2. CACHE THE RAG PIPELINE ---
@@ -50,11 +51,11 @@ def load_rag_pipeline():
         embedding=embeddings
     )
     
-    # 3. Retriever with Confidence Thresholds
+    # 3. Stricter Similarity Threshold (Filter out loose keyword matches)
     base_retriever = vectorstore.as_retriever(
         search_type="similarity_score_threshold",
         search_kwargs={
-            "score_threshold": 0.40, # Blocks out-of-scope queries
+            "score_threshold": 0.55,  # Raised from 0.40 to prevent semantic drift
             "k": 10
         }
     )
@@ -67,17 +68,24 @@ def load_rag_pipeline():
     )
     
     # 5. LLM
-    llm = ChatOllama(model="qwen2.5:0.5b", temperature=0.0) # Temp 0.0 for strict factual output
+    llm = ChatOllama(model="qwen2.5:0.5b", temperature=0.0)
     
-    # 6. Strict Prompt with Citation Mechanics
+    # 6. Hardened System Prompt with Few-Shot Refusal Demonstration
     system_prompt = (
-        "You are a strict, highly specialized clinical AI assistant. "
-        "Your ONLY task is to answer the doctor's query based EXCLUSIVELY on the provided context. "
-        "If the context is empty or does not contain the exact answer, you MUST reply verbatim: "
-        "'I do not have enough evidence in the provided clinical guidelines to answer this question safely.'\n\n"
-        "CITATION MECHANICS:\n"
-        "You must append a citation to every clinical claim you make. "
-        "Format citations strictly as: [Document: <name>, Section: <title>, Page: <number>].\n\n"
+        "You are an evidence-grounded medical AI assistant specialized ONLY in Gestational Diabetes guidelines.\n"
+        "RULES:\n"
+        "1. Answer ONLY using facts directly mentioned in the provided Context.\n"
+        "2. If the Context does not explicitly mention the exact topic or treatment requested in the Question, "
+        "you MUST reply with ONLY this exact sentence: 'I do not have enough evidence in the provided clinical guidelines to answer this question safely.'\n"
+        "3. NEVER use outside medical knowledge.\n\n"
+        "--- EXAMPLE 1 ---\n"
+        "Context: ACOG guidelines state fasting blood sugar should be below 95 mg/dL.\n"
+        "Question: What is the fasting glucose target?\n"
+        "Answer: The target fasting blood glucose level is below 95 mg/dL [Document: ACOG, Section: Targets].\n\n"
+        "--- EXAMPLE 2 ---\n"
+        "Context: Guidelines discuss insulin dosing for pregnant women with diabetes.\n"
+        "Question: What chemotherapy is recommended for breast cancer in pregnancy?\n"
+        "Answer: I do not have enough evidence in the provided clinical guidelines to answer this question safely.\n\n"
         "Context:\n{context}"
     )
     
@@ -92,59 +100,60 @@ def load_rag_pipeline():
 with st.spinner("Initializing Vector Database & Guardrails..."):
     rag_chain = load_rag_pipeline()
 
+# Helper function to render Evidence Panel cleanly
+def render_evidence_panel(docs, expanded=False):
+    with st.expander("📊 Evidence Panel: Retrieved Sources & Metadata", expanded=expanded):
+        for idx, doc in enumerate(docs, 1):
+            st.markdown(f"### 📑 Chunk #{idx}")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown(f"**📄 Document:** `{doc.metadata.get('source', 'Unknown')}`")
+                st.markdown(f"**🏢 Organization:** `{doc.metadata.get('organization', 'N/A')}`")
+            with col2:
+                st.markdown(f"**📌 Section:** `{doc.metadata.get('Section', 'General')}`")
+                st.markdown(f"**🎯 Category:** `{doc.metadata.get('category', 'N/A')}`")
+            with col3:
+                st.markdown(f"**📑 Subsection:** `{doc.metadata.get('Subsection', 'N/A')}`")
+                st.markdown(f"**🩺 Disease:** `{doc.metadata.get('disease', 'N/A')}`")
+            
+            st.markdown("**Retrieved Guideline Excerpt:**")
+            st.info(doc.page_content)
+            
+            with st.expander(f"🔍 View Raw Metadata Schema (Chunk #{idx})"):
+                st.json(doc.metadata)
+            st.divider()
+
 # --- 3. MANAGE CHAT HISTORY ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "How can I assist you with gestational diabetes guidelines today?"}]
+    st.session_state.messages = []
 
-# Render previous messages
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        # Render the Evidence Panel for previous assistant messages
-        if "sources" in msg and msg["sources"]:
-            with st.expander("📊 Evidence Panel: Retrieved Source Context"):
-                for idx, doc in enumerate(msg["sources"], 1):
-                    meta = doc.metadata
-                    source_name = meta.get("source", "Unknown Document")
-                    disease = meta.get("disease", "N/A")
-                    st.markdown(f"**Source {idx}:** `{source_name}` (Category: *{disease}*)")
-                    st.info(doc.page_content)
+        if msg.get("sources"):
+            render_evidence_panel(msg["sources"], expanded=False)
 
 # --- 4. HANDLE USER INPUT ---
-if prompt := st.chat_input("Enter a clinical query (e.g., 'What is the fasting blood sugar target?')..."):
-    
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if user_prompt := st.chat_input("Enter a clinical query (e.g., 'What is the fasting blood sugar target?')..."):
+    st.session_state.messages.append({"role": "user", "content": user_prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(user_prompt)
     
     with st.chat_message("assistant"):
         with st.spinner("Analyzing clinical guidelines..."):
+            response = rag_chain.invoke({"input": user_prompt})
+            answer = response.get("answer", "")
+            retrieved_sources = response.get("context", [])
             
-            # Execute Pipeline
-            response = rag_chain.invoke({"input": prompt})
-            answer = response["answer"]
-            sources = response.get("context", [])
-            
-            # Display Answer
             st.markdown(answer)
             
-            # Display Evidence Panel UI for live verification
-            if sources:
-                with st.expander("📊 Evidence Panel: Retrieved Source Context", expanded=True):
-                    for idx, doc in enumerate(sources, 1):
-                        meta = doc.metadata
-                        # Extracting metadata safely
-                        source_name = meta.get("source", "Unknown Document")
-                        disease = meta.get("disease", "N/A")
-                        
-                        st.markdown(f"**Source {idx}:** `{source_name}` (Category: *{disease}*)")
-                        st.info(doc.page_content)
+            if retrieved_sources:
+                render_evidence_panel(retrieved_sources, expanded=True)
             else:
                 st.warning("⚠️ Retrieval Confidence Threshold not met. No relevant chunks found.")
             
-    # Store in memory
     st.session_state.messages.append({
         "role": "assistant", 
         "content": answer,
-        "sources": sources
+        "sources": retrieved_sources
     })
